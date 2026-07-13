@@ -46,7 +46,7 @@ def build_request_kwargs(
     if tier_config.options.extra_body:
         kwargs["extra_body"] = deep_merge({}, tier_config.options.extra_body)
     if max_tokens is not None:
-        kwargs["max_tokens"] = (
+        kwargs["max_completion_tokens"] = (
             max(max_tokens, 4096) if tier_config.options.thinking else max_tokens
         )
     return kwargs

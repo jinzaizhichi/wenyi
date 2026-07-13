@@ -173,6 +173,34 @@ class TestProviderRequestKwargs(unittest.TestCase):
         disabled_kwargs = build_request_kwargs(disabled, self.messages)
         self.assertEqual(disabled_kwargs["reasoning_effort"], "none")
 
+    def test_openai_uses_max_completion_tokens(self):
+        from trans_novel.llm.providers._openai_compatible import ResolvedTier
+        from trans_novel.llm.providers.openai import (
+            OpenAITierOptions,
+            build_request_kwargs,
+        )
+
+        enabled = ResolvedTier(model="m", options=OpenAITierOptions())
+        disabled = ResolvedTier(
+            model="m",
+            options=OpenAITierOptions(thinking=False),
+        )
+
+        enabled_kwargs = build_request_kwargs(
+            enabled,
+            self.messages,
+            max_tokens=100,
+        )
+        disabled_kwargs = build_request_kwargs(
+            disabled,
+            self.messages,
+            max_tokens=100,
+        )
+        self.assertNotIn("max_tokens", enabled_kwargs)
+        self.assertEqual(enabled_kwargs["max_completion_tokens"], 4096)
+        self.assertNotIn("max_tokens", disabled_kwargs)
+        self.assertEqual(disabled_kwargs["max_completion_tokens"], 100)
+
     def test_generic_compatible_endpoint_uses_only_explicit_extra_body(self):
         from trans_novel.llm.providers._openai_compatible import ResolvedTier
         from trans_novel.llm.providers.openai_compatible import (
