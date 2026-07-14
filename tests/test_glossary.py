@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from trans_novel.glossary.store import (
     GlossaryStore,
@@ -79,6 +81,33 @@ class TestGlossary(unittest.TestCase):
         self.assertEqual(term.target, "掘北")
         self.assertEqual(term.status, "ok")
         self.assertEqual(self.store.open_conflicts(), [])
+
+    def test_concurrent_upserts_make_one_atomic_conflict_decision(self):
+        path = os.path.join(self.tmp.name, "concurrent.db")
+        initial = GlossaryStore(path)
+        initial.close()
+        barrier = threading.Barrier(2)
+
+        def write(target: str) -> str:
+            store = GlossaryStore(path)
+            try:
+                barrier.wait()
+                return store.upsert_term(
+                    GlossaryTerm(source="Name", target=target), chapter=1
+                )
+            finally:
+                store.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(write, ["译名甲", "译名乙"]))
+
+        check = GlossaryStore(path)
+        try:
+            self.assertCountEqual(results, ["inserted", "conflict"])
+            self.assertEqual(len(check.all_terms()), 1)
+            self.assertEqual(len(check.open_conflicts()), 1)
+        finally:
+            check.close()
 
     def test_legacy_confidence_and_locked_columns_are_migrated(self):
         path = os.path.join(self.tmp.name, "legacy.db")
