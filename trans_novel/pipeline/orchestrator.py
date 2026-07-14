@@ -2,8 +2,8 @@
 
 单章流水线（章内批次**串行**，逐批刷新滚动上下文与术语快照；跨章亦串行传递梗概）：
   每批：渲染上下文（含前一批刚译出的译文）→ 翻译（对齐保证）→ 润色（可选）→
-        标点规范化 → 术语/称呼/固定表达实时抽取入库 → 立即供下一批参照。
-  章末：全章术语兜底抽取 → 整章分块并行审校 →
+        术语/称呼/固定表达实时抽取入库 → 立即供下一批参照。
+  章末：跨段标点规范化 → 全章术语兜底抽取 → 整章分块并行审校 →
         严重项串行定向重译（autofix_severe，过长度校验才采纳）→ 回译抽检 → 写 TM → 落盘标记 done。
 翻译前先预扫源文建立全书理解（逐章梗概+全书概览，fast 档并行），作恒定前缀注入每章翻译。
 
@@ -89,7 +89,6 @@ def _resume_batches(segments, max_chars: int) -> list[list]:
 @dataclass
 class _BatchResult:
     targets: list[str]
-    issues: list[dict] = field(default_factory=list)
     bt_samples: list[tuple[str, str]] = field(default_factory=list)
 
 
@@ -586,7 +585,6 @@ class Orchestrator:
                 count=len(b),
                 polished=self.config.pipeline.polish,
                 punctuation_normalized=self._punctuation_enabled(),
-                issues=res.issues,
                 backtranslate_sample_count=len(res.bt_samples),
                 segments=[
                     {"index": batch_start + i, "source": s.source, "target": t}
@@ -594,10 +592,6 @@ class Orchestrator:
                 ],
             )
             context.add_targets(res.targets)
-            for it in res.issues:
-                it["chapter"] = ci
-                it["index"] += batch_start   # 批内下标 → 章内段号
-            review_issues.extend(res.issues)
             bt_samples.extend(res.bt_samples)
             done += len(b)
             seg_base += len(b)
@@ -847,18 +841,17 @@ class Orchestrator:
 
     def _process_batch(self, batch, terms, ctx_text: str, style: str,
                        book_synopsis: str = "", chapter_digest: str = "") -> _BatchResult:
-        """单个批次：整批翻译 → 润色 → 标点规范化。
+        """单个批次：整批翻译 → 润色。
 
         每段都在自身上下文里翻译，不跨位置复用译文（避免丢失语境信息）。
         全书概览/本章梗概作为恒定前缀注入，让译者把握全局。
+        标点规范化在章末统一执行，以维持跨段引号状态。
         LLM 审校不在批内做（移至章末统一做，见 _review_chapter，不阻塞翻译主路径）。
         """
         sources = [s.source for s in batch]
         targets = self.translator.translate_batch(
             sources, glossary_terms=terms, style=style, context=ctx_text,
             book_synopsis=book_synopsis, chapter_digest=chapter_digest)
-
-        issues: list[dict] = []
 
         if self.config.pipeline.polish:
             polished = self.polisher.polish(targets, glossary_terms=terms, style=style)
@@ -872,7 +865,7 @@ class Orchestrator:
                 if random.random() < rate:
                     bt_samples.append((s, t or ""))
 
-        return _BatchResult(targets=targets, issues=issues, bt_samples=bt_samples)
+        return _BatchResult(targets=targets, bt_samples=bt_samples)
 
     # ── 可选步骤 / 连续全流程 ────────────────────────────────────────────────
     ALL_STEPS = ("translate", "qa", "report", "assemble")

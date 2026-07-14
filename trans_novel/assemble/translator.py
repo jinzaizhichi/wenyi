@@ -30,7 +30,7 @@ class Translator(Agent):
     ) -> list[str]:
         n = len(sources)
         system = prompts.render(
-            "translator_system", src=self.src, tgt=self.tgt, n=n,
+            "translator_system", src=self.src, tgt=self.tgt,
             lang_guidance=langprofile.translate_guidance(
                 self.src, self.config.honorific_strategy),
         )
@@ -78,7 +78,7 @@ class Translator(Agent):
         user 用 translator_fix_user：前缀块与主翻译一致，上下文换成前文+后文译文，附审校意见。
         """
         system = prompts.render(
-            "translator_system", src=self.src, tgt=self.tgt, n=1,
+            "translator_system", src=self.src, tgt=self.tgt,
             lang_guidance=langprofile.translate_guidance(
                 self.src, self.config.honorific_strategy),
         )

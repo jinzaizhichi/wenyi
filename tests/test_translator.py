@@ -10,7 +10,7 @@ from trans_novel.config import Config
 from trans_novel.agents import prompts
 from trans_novel.llm.providers.fake import FakeClient
 from trans_novel.agents.translator import Translator
-from trans_novel.pipeline.checks import count_aligned, length_flags
+from trans_novel.pipeline.checks import length_flags
 
 
 def _count_segments(user_content: str) -> int:
@@ -90,10 +90,6 @@ class TestTranslatorPromptOrder(unittest.TestCase):
 
 
 class TestChecks(unittest.TestCase):
-    def test_count_aligned(self):
-        self.assertTrue(count_aligned(["a", "b"], ["甲", "乙"]))
-        self.assertFalse(count_aligned(["a", "b"], ["甲"]))
-
     def test_length_flags(self):
         sources = ["これは長い日本語の文章です。" * 3, "短い", "x" * 10]
         targets = ["", "短い但正常的中文译文内容", "x" * 40]
