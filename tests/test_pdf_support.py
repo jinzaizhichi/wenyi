@@ -13,6 +13,7 @@ from trans_novel.assemble.writer import assemble
 from trans_novel.cli import _runstore_for
 from trans_novel.config import Config
 from trans_novel.ingest.errors import MinerUError
+from trans_novel.ingest.models import Document
 from trans_novel.ingest.segmenter import load_document
 from trans_novel.llm.providers.fake import FakeClient
 from trans_novel.pipeline.orchestrator import Orchestrator
@@ -38,6 +39,13 @@ def _set_test_targets(store: RunStore) -> None:
         for segment in chapter.segments:
             segment.target = f"译{chapter.index}-{segment.index}"
         store.save_chapter(chapter)
+
+
+def _initialize_test_store(store: RunStore, document: Document) -> None:
+    """Commit a parsed document using the current manifest-last store protocol."""
+    manifest = store.stage_document(document)
+    manifest["initialized"] = True
+    store.save_manifest(manifest)
 
 
 class TestPdfIngest(unittest.TestCase):
@@ -158,7 +166,7 @@ class TestHtmlAndMarkdownIntegration(unittest.TestCase):
                 file.write(_HTML)
             document = load_document(source_path, "en", "zh")
             store = RunStore(os.path.join(directory, "state"))
-            store.init_from_document(document)
+            _initialize_test_store(store, document)
             _set_test_targets(store)
             output_path = os.path.join(directory, "nested", "translated.html")
 
@@ -188,7 +196,7 @@ class TestHtmlAndMarkdownIntegration(unittest.TestCase):
                 [1, 2],
             )
             store = RunStore(os.path.join(directory, "state"))
-            store.init_from_document(document)
+            _initialize_test_store(store, document)
             _set_test_targets(store)
             output_path = os.path.join(directory, "translated.html")
 
@@ -214,7 +222,7 @@ class TestHtmlAndMarkdownIntegration(unittest.TestCase):
                 file.write("Original paragraph.\n")
             document = load_document(source_path, "en", "zh")
             store = RunStore(os.path.join(directory, "state"))
-            store.init_from_document(document)
+            _initialize_test_store(store, document)
             _set_test_targets(store)
             output_path = os.path.join(directory, "translated.html")
 

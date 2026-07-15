@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import os
 import re
 
@@ -87,6 +88,7 @@ def split_long_segments(chapters: list[Chapter], max_chars: int) -> None:
                             kind=s.kind,
                             anchor=s.anchor,
                             cont=False,
+                            meta=deepcopy(s.meta),
                         )
                     )
                 else:  # 续段：并回首段，无独立 anchor
@@ -111,6 +113,7 @@ def load_document(
     *,
     cache_dir: str | None = None,
 ) -> Document:
+    """按文件扩展名读取文档，并按需拆分超过上限的翻译段。"""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".epub":
         doc = read_epub(path, source_lang, target_lang)
