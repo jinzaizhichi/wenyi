@@ -101,14 +101,17 @@ def extract_gemini_usage(usage_metadata: Any) -> UsageSample | None:
 
     包含:
     - prompt_token_count (及 cached_content_token_count)
-    - candidates_token_count
+    - candidates_token_count 与 thoughts_token_count
     - total_token_count
     """
     if usage_metadata is None:
         return None
 
     prompt_tokens = read_usage_int(usage_metadata, "prompt_token_count")
-    completion_tokens = read_usage_int(usage_metadata, "candidates_token_count")
+    completion_tokens = (
+        read_usage_int(usage_metadata, "candidates_token_count")
+        + read_usage_int(usage_metadata, "thoughts_token_count")
+    )
     total_tokens = read_usage_int(usage_metadata, "total_token_count") or (
         prompt_tokens + completion_tokens
     )
@@ -209,9 +212,16 @@ class GeminiClient(LLMClient):
                 self.validate_credentials()
                 api_key, _ = get_api_key_from_env(self.cfg.api_key_env)
 
-                kwargs: dict[str, Any] = {"api_key": api_key}
+                kwargs: dict[str, Any] = {
+                    "api_key": api_key,
+                    # LLMConfig.timeout 以秒表示，google-genai HttpOptions
+                    # 则要求毫秒。
+                    "http_options": {"timeout": self.cfg.timeout * 1000},
+                }
                 if self.cfg.base_url:
-                    kwargs["http_options"] = {"api_option": "REST", "base_url": self.cfg.base_url}
+                    kwargs["http_options"].update(
+                        {"api_option": "REST", "base_url": self.cfg.base_url}
+                    )
 
                 self._client = genai.Client(**kwargs)
         return self._client

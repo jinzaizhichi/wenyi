@@ -78,14 +78,15 @@ def test_extract_gemini_usage():
     usage_meta = SimpleNamespace(
         prompt_token_count=100,
         candidates_token_count=50,
-        total_token_count=150,
+        thoughts_token_count=25,
+        total_token_count=175,
         cached_content_token_count=30,
     )
     sample = extract_gemini_usage(usage_meta)
     assert sample is not None
     assert sample.prompt_tokens == 100
-    assert sample.completion_tokens == 50
-    assert sample.total_tokens == 150
+    assert sample.completion_tokens == 75
+    assert sample.total_tokens == 175
     assert sample.cache_hit_tokens == 30
     assert sample.cache_miss_tokens == 70
 
@@ -120,6 +121,26 @@ def test_gemini_client_validate_credentials():
         client.validate_credentials()
 
 
+def test_gemini_client_applies_timeout_in_milliseconds():
+    """通用秒级 timeout 应转换为 google-genai 使用的毫秒值。"""
+    cfg = LLMConfig(
+        provider="gemini",
+        api_key_env="TEST_GEMINI_KEY",
+        timeout=17,
+    )
+
+    with (
+        patch.dict(os.environ, {"TEST_GEMINI_KEY": "valid_key"}, clear=True),
+        patch("google.genai.Client") as client_type,
+    ):
+        GeminiClient(cfg)._ensure_client()
+
+    client_type.assert_called_once_with(
+        api_key="valid_key",
+        http_options={"timeout": 17_000},
+    )
+
+
 def test_gemini_client_complete_and_usage():
     """测试 GeminiClient.complete 流程与用量归因。"""
     cfg = LLMConfig(
@@ -137,7 +158,8 @@ def test_gemini_client_complete_and_usage():
         usage_metadata=SimpleNamespace(
             prompt_token_count=80,
             candidates_token_count=20,
-            total_token_count=100,
+            thoughts_token_count=5,
+            total_token_count=105,
             cached_content_token_count=0,
         ),
     )
@@ -156,7 +178,7 @@ def test_gemini_client_complete_and_usage():
 
     summary = client.usage_summary()
     assert summary["totals"]["prompt_tokens"] == 80
-    assert summary["totals"]["completion_tokens"] == 20
+    assert summary["totals"]["completion_tokens"] == 25
 
 
 def test_gemini_client_json_mode():
