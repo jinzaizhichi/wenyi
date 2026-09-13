@@ -806,8 +806,8 @@ class TestSegmentLevelResume(unittest.TestCase):
             ch = store.load_chapter(0)
             self.assertTrue(all(s.target and s.target.startswith("R1") for s in ch.text_segments))
 
-            # Simulate interruption by clearing the last target and resetting the chapter to pending.
-            ch.segments[-1].target = ""
+            # Simulate interruption by unsetting the last target (None = pending; "" would count as done).
+            ch.segments[-1].target = None
             store.save_chapter(ch)
             store.set_chapter_status(0, STATUS_PENDING)
 
@@ -843,11 +843,11 @@ class TestSegmentLevelResume(unittest.TestCase):
             first_client = FakeClient(handler=self._tr_handler("R1"))
             store = Orchestrator(cfg, client=first_client).run(txt, only_chapter=0)
             chapter = store.load_chapter(0)
-            chapter.text_segments[-1].target = ""
+            chapter.text_segments[-1].target = None
             store.save_chapter(chapter)
             store.set_chapter_status(0, STATUS_PENDING)
 
-            # Changing the budget can still group completed and empty targets together.
+            # Changing the budget can still group completed and unset targets together.
             cfg.segment.max_chars_per_batch = 50_000
             second_client = FakeClient(handler=self._tr_handler("R2"))
             Orchestrator(cfg, client=second_client).run(txt, only_chapter=0)
@@ -878,8 +878,8 @@ class TestSegmentLevelResume(unittest.TestCase):
             chapter = store.load_chapter(0)
             segments = chapter.text_segments
             self.assertGreater(len(segments), 2)
-            # Leave the last paragraph pending and remove the first extraction checkpoint, retaining the others.
-            segments[-1].target = ""
+            # Leave the last paragraph pending (None) and remove the first extraction checkpoint.
+            segments[-1].target = None
             store.save_chapter(chapter)
             store.set_chapter_status(0, STATUS_PENDING)
             first_key = store.batch_glossary_key(0, 1)
