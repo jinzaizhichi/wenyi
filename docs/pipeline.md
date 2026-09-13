@@ -29,9 +29,13 @@ All targets, including `zh`, own separate state under `state/<book>/targets/<tar
 
 ## Whole-book understanding and context
 
-The prescan creates a digest for each chapter and a synopsis of the complete book. For every translation batch, the prompt presents stable information first: style guidance, the whole-book synopsis, the current chapter digest, relevant glossary terms, any source-language notes referenced by the current segments, recent translated context, and finally the source text to translate. Recent translation therefore remains immediately adjacent to the new source passage.
+The prescan creates a digest for each chapter and a synopsis of the complete book. For every translation batch, the prompt presents stable information first: style guidance, the whole-book synopsis, the current chapter digest, relevant glossary terms, any source-language notes referenced by the current segments, recent translated context, the source text to translate, and one following source segment. Recent translation therefore remains immediately adjacent to the new source passage.
 
 This lets early chapters benefit from knowledge of later events while helping adjacent batches preserve pronouns, forms of address, tone, and sentences that span multiple source segments.
+
+The following segment is a quoted, read-only reference from the same chapter. It helps the translator recognize a sentence or dialogue that continues beyond the batch, including fragments split from a long paragraph, and avoid inventing an ending or forcing final punctuation. The reference is excluded from the numbered inputs and output count; its content must not be translated early or borrowed to complete the current paragraph. It is also supplied to polishing. At a chapter end there is no following reference; the workflow does not cross into the next chapter. This is built in and remains enabled when `rolling_context_segments` is zero, which disables only preceding translations.
+
+Alignment retries retain the reference. Single-paragraph fallback uses that paragraph's immediate source neighbor, including an unchanged number or symbol. Resume recomputes the neighbor from source order after splitting completed and pending batches, preserving completed targets and stable segment identities. Lookahead is never added to the saved rolling translation context. It adds at most one source segment to each translation or polishing request, with no extra model call. This supplies continuity evidence; actual wording and sentence endings still depend on the model.
 
 ## Glossary
 
@@ -62,12 +66,18 @@ uv run trans-novel review book.epub --autofix
 
 The explicit command runs even when `pipeline.review` is disabled. Matching completed
 results are reused; an interrupted Review resumes its saved rounds, chunks, and agent
-traces when content, configuration, and glossary fingerprints match. Otherwise, a new
-whole-book Review starts. Cached chunks and completed initial screening skip chapter
-glossary matching; pending reviewer requests share one chapter-wide glossary snapshot.
+traces when content, configuration, and glossary fingerprints match. Recoverable stops
+such as Ctrl+C, timeouts, transport failures, HTTP 429/5xx, and provider balance/quota
+errors (for example HTTP 402) leave the run as `interrupted` so the next `review`
+command can continue instead of starting a new directory. Permanent local failures still
+finish as `failed`. Otherwise, a new whole-book Review starts. Cached chunks and
+completed initial screening skip chapter glossary matching; pending reviewer requests
+share one chapter-wide glossary snapshot.
 The CLI shows chapter loading and checkpoint preparation before reviewing paragraphs.
-Elapsed time measures the current stage of this invocation and continues advancing
-while model requests are pending; paragraph counts advance when a top-level chunk
+Elapsed time measures the entire current workflow and never resets at stage or round
+boundaries. It continues advancing while model requests are pending, even after a stage
+reaches its final count. Each invocation's duration is saved in the target's `timing.json`
+and accumulated across resumes, excluding downtime. Paragraph counts advance when a top-level chunk
 finishes, including chunks restored from cache.
 
 The Review engine first updates a run-local shadow translation. Publishing is enabled by default;
