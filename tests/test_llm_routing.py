@@ -268,10 +268,6 @@ def test_router_freezes_original_config_and_direct_selection(monkeypatch):
 
 def test_dynamic_output_hint_respects_explicit_profile_cap(monkeypatch):
     client = RoutedLLMClient(_graph())
-    observed = []
-    client.set_event_sink(
-        lambda event, **data: observed.append(data) if event == "llm_request_started" else None
-    )
     requested = []
 
     def request(self, messages, model, *, json_mode, context):

@@ -1762,9 +1762,17 @@ class TestReviewReporting(unittest.TestCase):
                 orch1.run_review(txt)
 
             review_dir = os.path.join(store.reviews_dir, sorted(os.listdir(store.reviews_dir))[-1])
-            run1_review_calls = len(client1.calls) - translated_calls
-            # The interrupted call still reached the transport and must be billed once.
-            self.assertEqual(run1_review_calls, 3)
+            run1_review_stages = [
+                call["stage"]
+                for call in client1.calls[translated_calls:]
+                if call["stage"].startswith("review.")
+            ]
+            # scan issue → verify → second scan (KeyboardInterrupt after transport billed it).
+            self.assertEqual(
+                run1_review_stages,
+                ["review.scan", "review.verify", "review.scan"],
+            )
+            run1_review_calls = len(run1_review_stages)
             with open(os.path.join(review_dir, "usage.json"), encoding="utf-8") as file:
                 interrupted_usage = json.load(file)
             self.assertEqual(interrupted_usage["totals"]["calls"], run1_review_calls)
