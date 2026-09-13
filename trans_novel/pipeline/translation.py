@@ -31,18 +31,27 @@ if TYPE_CHECKING:
 ProgressFn = Callable[[int, int, str], None]
 
 
+def _is_mineru_pdf(manifest: dict[str, Any]) -> bool:
+    """True for MinerU PDF state (fmt=pdf without BabelDOC markers)."""
+    if manifest.get("fmt") != "pdf":
+        return False
+    raw_meta = manifest.get("meta")
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
+    return not bool(meta.get("babeldoc")) and meta.get("pdf_export") != "babeldoc"
+
+
 def _resume_batches(segments, max_chars: int) -> list[list]:
     """Split character-budget batches again at completed/pending boundaries.
-    A changed budget may mix saved translations and empty targets in one batch. Group by
+    A changed budget may mix saved translations and unset targets in one batch. Group by
     completion state to translate only missing paragraphs and avoid overwriting confirmed
-    content.
+    content. ``target is not None`` (including blank ``""``) counts as translated.
     """
     batches: list[list] = []
     for raw_batch in batch_segments(segments, max_chars):
         current: list = []
         current_done: bool | None = None
         for segment in raw_batch:
-            done = bool(segment.target and segment.target.strip())
+            done = segment.target is not None
             if current and done != current_done:
                 batches.append(current)
                 current = []
@@ -80,6 +89,7 @@ class TranslationService:
             min_recent_keep=max(40, self._runtime.config.pipeline.rolling_context_segments),
         )
         style = self._runtime.analyzer.style_brief(store.load_analysis() or {})
+        allow_empty_translations = _is_mineru_pdf(manifest)
 
         if only_chapter is not None:
             targets = [only_chapter]
@@ -96,6 +106,7 @@ class TranslationService:
             only_chapter=only_chapter,
             chapters=targets,
             total_segments=total,
+            allow_empty_translations=allow_empty_translations,
         )
         try:
             for ci in targets:
@@ -112,6 +123,7 @@ class TranslationService:
                     progress=progress,
                     done=done,
                     total=total,
+                    allow_empty_translations=allow_empty_translations,
                 )
                 store.save_context(context.to_dict())
                 self._runtime.flush_usage(store, scope="chapter")
@@ -179,8 +191,8 @@ class TranslationService:
     def progress_counts(self, store: RunStore, chapter_indices: list[int]) -> tuple[int, int]:
         """Compute progress from batch checkpoints, starting resume at completed translation
         counts.
-        Count a batch as done only when all its targets exist. Counting partial batches
-        early would duplicate completion counts if the batch reruns.
+        Count a batch as done only when every target is not None (blank ``""`` counts). Counting
+        partial batches early would duplicate completion counts if the batch reruns.
         """
         total = 0
         done = 0
@@ -190,7 +202,7 @@ class TranslationService:
             for batch in _resume_batches(
                 segments, self._runtime.config.segment.max_chars_per_batch
             ):
-                if all(segment.target and segment.target.strip() for segment in batch):
+                if all(segment.target is not None for segment in batch):
                     done += len(batch)
         return total, done
 
@@ -209,6 +221,7 @@ class TranslationService:
         progress: ProgressFn | None = None,
         done: int = 0,
         total: int = 0,
+        allow_empty_translations: bool = False,
     ) -> int:
         """Translate, polish, extract and persist one chapter; return the updated
         completed-paragraph count.
@@ -246,9 +259,9 @@ class TranslationService:
         for b in batches:
             batch_start = seg_base
             glossary_key = store.batch_glossary_key(batch_start, len(b))
-            existing_targets = [s.target for s in b if s.target and s.target.strip()]
-            if len(existing_targets) == len(b):
+            if all(s.target is not None for s in b):
                 # Reuse a batch translated at this position/context, rebuild rolling context and skip it.
+                # Blank "" is a completed MinerU allowance; only None means not yet translated.
                 self._annotations.align_annotations_after_batch(
                     ci,
                     chapter,
@@ -324,6 +337,7 @@ class TranslationService:
                 chapter_digest,
                 annotation_contexts=annotation_contexts[batch_start : batch_start + len(b)],
                 next_source=next_source,
+                allow_empty_translations=allow_empty_translations,
             )
             for s, t in zip(b, targets):
                 s.target = t
@@ -478,7 +492,7 @@ class TranslationService:
         sees current formal text.
         """
         prefix = segments[: max(0, min(end, len(segments)))]
-        if not prefix or any(not (segment.target and segment.target.strip()) for segment in prefix):
+        if not prefix or any(segment.target is None for segment in prefix):
             return
         targets = [segment.target or "" for segment in prefix]
         retained = min(len(targets), len(context.recent_targets))
@@ -754,6 +768,8 @@ class TranslationService:
         chapter_digest: str = "",
         annotation_contexts: list[list[dict[str, str]]] | None = None,
         next_source: str = "",
+        *,
+        allow_empty_translations: bool = False,
     ) -> list[str]:
         """Translate then polish one batch.
         Translate every paragraph in its own context without reusing text across positions.
@@ -771,6 +787,7 @@ class TranslationService:
             chapter_digest=chapter_digest,
             annotation_contexts=annotation_contexts,
             next_source=next_source,
+            allow_empty_translations=allow_empty_translations,
         )
         # Strip pronunciation markers accidentally copied from source into the model's translation.
         targets = [strip_ruby_markers(target) for target in targets]
